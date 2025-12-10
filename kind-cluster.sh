@@ -571,6 +571,12 @@ cmd_status() {
 # =============================================================================
 
 main() {
+    # Show help when no arguments provided
+    if [[ $# -eq 0 ]]; then
+        print_usage
+        exit 0
+    fi
+
     # Handle help as early exit (before parse_args captures stdout)
     if [[ "${1:-}" == "help" ]] || [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
         print_usage
