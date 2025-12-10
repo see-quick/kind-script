@@ -142,7 +142,8 @@ registry_create() {
 
     # Wait for registry to be ready
     info "Waiting for registry to be ready..."
-    if ! wait_for 60 2 registry_is_healthy "${name}" "${port}"; then
+    local health_check_host="${host_ip:-localhost}"
+    if ! wait_for 60 2 registry_is_healthy "${name}" "${port}" "${health_check_host}"; then
         err "Registry failed to become healthy"
         return 1
     fi
@@ -151,9 +152,11 @@ registry_create() {
 }
 
 # Check if registry is healthy (can accept connections)
+# Args: name port host_ip
 registry_is_healthy() {
     local name="${1:-${REGISTRY_NAME}}"
     local port="${2:-${REGISTRY_PORT}}"
+    local host_ip="${3:-localhost}"
 
     # First check if container is running
     if ! registry_is_running "${name}"; then
@@ -161,7 +164,15 @@ registry_is_healthy() {
     fi
 
     # Try to connect to the registry API
-    curl -sf "http://localhost:${port}/v2/" >/dev/null 2>&1
+    # Handle IPv6 addresses by wrapping in brackets
+    local registry_url
+    if [[ "${host_ip}" == *:* ]]; then
+        registry_url="http://[${host_ip}]:${port}/v2/"
+    else
+        registry_url="http://${host_ip}:${port}/v2/"
+    fi
+
+    curl -sf "${registry_url}" >/dev/null 2>&1
 }
 
 # =============================================================================
