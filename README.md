@@ -12,6 +12,22 @@ Inspired by [StrimKKhaos](https://github.com/see-quick/StrimKKhaos).
 - **Local container registry** for development
 - **Cloud-provider-kind** for LoadBalancer support
 
+## Installation
+
+Download the latest version:
+
+```bash
+curl -sSLO https://github.com/see-quick/kind-script/raw/main/kind-cluster.sh
+chmod +x kind-cluster.sh
+```
+
+Or pin to a specific version:
+
+```bash
+curl -sSLO https://github.com/see-quick/kind-script/raw/v1.0.0/kind-cluster.sh
+chmod +x kind-cluster.sh
+```
+
 ## Quick Start
 
 ```bash
@@ -28,6 +44,7 @@ Inspired by [StrimKKhaos](https://github.com/see-quick/StrimKKhaos).
 | `delete`       | Delete cluster and cleanup         |
 | `status`       | Show status                        |
 | `install-deps` | Install kind and kubectl           |
+| `version`      | Show version information           |
 | `help`         | Show help                          |
 
 ## Options

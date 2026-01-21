@@ -27,6 +27,9 @@
 
 set -euo pipefail
 
+# Version
+readonly VERSION="1.0.0"
+
 # =============================================================================
 # Script Location and Library Loading
 # =============================================================================
@@ -109,6 +112,7 @@ Commands:
     delete          Delete Kind cluster and cleanup
     status          Show cluster and component status
     install-deps    Install kind and kubectl binaries
+    version         Show version information
     help            Show this help message
 
 Options:
@@ -159,12 +163,22 @@ Examples:
 EOF
 }
 
+print_version() {
+    echo "kind-cluster.sh version ${VERSION}"
+}
+
 parse_args() {
     local command="${1:-create}"
 
     # Handle help as first argument
     if [[ "${command}" == "help" ]] || [[ "${command}" == "--help" ]] || [[ "${command}" == "-h" ]]; then
         print_usage
+        exit 0
+    fi
+
+    # Handle version as first argument
+    if [[ "${command}" == "version" ]] || [[ "${command}" == "--version" ]] || [[ "${command}" == "-v" ]]; then
+        print_version
         exit 0
     fi
 
@@ -568,9 +582,14 @@ main() {
         exit 0
     fi
 
-    # Handle help as early exit (before parse_args captures stdout)
+    # Handle help and version as early exit (before parse_args captures stdout)
     if [[ "${1:-}" == "help" ]] || [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
         print_usage
+        exit 0
+    fi
+
+    if [[ "${1:-}" == "version" ]] || [[ "${1:-}" == "--version" ]] || [[ "${1:-}" == "-v" ]]; then
+        print_version
         exit 0
     fi
 
