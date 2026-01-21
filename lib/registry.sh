@@ -180,28 +180,30 @@ registry_is_healthy() {
 # =============================================================================
 
 # Configure containerd on kind nodes to use the registry
-# Args: cluster_name registry_name registry_port host_address insecure
+# Args: cluster_name registry_name registry_port host_address insecure network
 registry_configure_nodes() {
     local cluster_name="${1:-${KIND_CLUSTER_NAME}}"
     local registry_name="${2:-${REGISTRY_NAME}}"
     local registry_port="${3:-${REGISTRY_PORT}}"
     local host_address="${4:-}"
     local insecure="${5:-false}"
+    local network="${6:-${NETWORK_NAME}}"
 
     info "Configuring kind nodes to use registry"
 
-    # Get the registry address for containerd config
-    local registry_host
-    if [[ -n "${host_address}" ]]; then
-        registry_host="${host_address}:${registry_port}"
-    else
-        # Use the host's hostname/IP
-        registry_host="$(hostname -I 2>/dev/null | awk '{print $1}')"
-        if [[ -z "${registry_host}" ]]; then
-            registry_host="127.0.0.1"
-        fi
-        registry_host="${registry_host}:${registry_port}"
+    # Get the registry's internal IP on the Kind network
+    # This is what the Kind nodes will use to access the registry
+    local registry_internal_ip
+    registry_internal_ip=$(${DOCKER_CMD} inspect -f "{{.NetworkSettings.Networks.${network}.IPAddress}}" "${registry_name}" 2>/dev/null)
+
+    if [[ -z "${registry_internal_ip}" ]]; then
+        err "Failed to get registry internal IP. Is the registry running and connected to network '${network}'?"
+        return 1
     fi
+
+    # Use internal IP with internal port (5000), not the external mapped port
+    local registry_host="${registry_internal_ip}:5000"
+    debug "Registry internal address: ${registry_host}"
 
     local registry_dir="/etc/containerd/certs.d/${registry_host}"
 

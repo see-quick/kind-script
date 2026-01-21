@@ -412,7 +412,7 @@ cmd_create() {
         else
             registry_create "${REGISTRY_NAME}" "${REGISTRY_PORT}" "${NETWORK_NAME}" "${REGISTRY_IMAGE}" "${host_ip}"
             # Configure nodes to use registry (with insecure flag if requested)
-            registry_configure_nodes "${KIND_CLUSTER_NAME}" "${REGISTRY_NAME}" "${REGISTRY_PORT}" "${host_ip}" "${CONFIGURE_INSECURE_REGISTRY}"
+            registry_configure_nodes "${KIND_CLUSTER_NAME}" "${REGISTRY_NAME}" "${REGISTRY_PORT}" "${host_ip}" "${CONFIGURE_INSECURE_REGISTRY}" "${NETWORK_NAME}"
         fi
     fi
 
