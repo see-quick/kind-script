@@ -265,13 +265,8 @@ parse_args() {
         esac
     done
 
-    # Export parsed values
-    export KIND_CLUSTER_NAME CONTROL_NODES WORKER_NODES KIND_NODE_IMAGE
-    export IP_FAMILY DOCKER_CMD REGISTRY_NAME REGISTRY_PORT
-    export ENABLE_REGISTRY ENABLE_CLOUD_PROVIDER ENABLE_NODE_LABELS
-    export ENABLE_ADMIN_BINDING FORCE_RECREATE CONFIGURE_INSECURE_REGISTRY DEBUG
-
-    echo "${command}"
+    # Set the command for the caller (don't use subshell)
+    PARSED_COMMAND="${command}"
 }
 
 # =============================================================================
@@ -583,12 +578,11 @@ main() {
         exit 0
     fi
 
-    # Parse arguments and get command
-    local command
-    command=$(parse_args "$@")
+    # Parse arguments (sets PARSED_COMMAND and modifies global config variables)
+    parse_args "$@"
 
     # Execute command
-    case "${command}" in
+    case "${PARSED_COMMAND}" in
         create)
             cmd_create
             ;;
@@ -602,7 +596,7 @@ main() {
             cmd_install_deps
             ;;
         *)
-            err "Unknown command: ${command}"
+            err "Unknown command: ${PARSED_COMMAND}"
             print_usage
             exit 1
             ;;
