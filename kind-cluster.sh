@@ -482,6 +482,9 @@ cmd_delete() {
     # Delete cluster
     cluster_delete "${KIND_CLUSTER_NAME}"
 
+    # Delete network
+    network_delete "${NETWORK_NAME}"
+
     success "Cleanup complete"
 }
 
