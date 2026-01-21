@@ -386,14 +386,7 @@ cmd_create() {
     host_ip=$(get_host_ipv4)
     debug "Host IP: ${host_ip}"
 
-    # Configure insecure registry if requested
-    if [[ "${CONFIGURE_INSECURE_REGISTRY}" == "true" ]] && [[ "${ENABLE_REGISTRY}" == "true" ]]; then
-        if [[ "${IP_FAMILY}" == "ipv6" ]]; then
-            configure_insecure_registry "" "${IPV6_ULA_PREFIX}" "${IPV6_REGISTRY_DNS}"
-        else
-            configure_insecure_registry "${host_ip}:${REGISTRY_PORT}"
-        fi
-    fi
+    # Note: Insecure registry configuration is done on Kind nodes after cluster creation
 
     # Handle IPv6 specific setup
     if [[ "${IP_FAMILY}" == "ipv6" ]]; then
@@ -418,8 +411,8 @@ cmd_create() {
             registry_configure_nodes_ipv6 "${KIND_CLUSTER_NAME}" "${IPV6_ULA_PREFIX}::1" "${IPV6_REGISTRY_DNS}"
         else
             registry_create "${REGISTRY_NAME}" "${REGISTRY_PORT}" "${NETWORK_NAME}" "${REGISTRY_IMAGE}" "${host_ip}"
-            # Configure nodes to use registry
-            registry_configure_nodes "${KIND_CLUSTER_NAME}" "${REGISTRY_NAME}" "${REGISTRY_PORT}" "${host_ip}"
+            # Configure nodes to use registry (with insecure flag if requested)
+            registry_configure_nodes "${KIND_CLUSTER_NAME}" "${REGISTRY_NAME}" "${REGISTRY_PORT}" "${host_ip}" "${CONFIGURE_INSECURE_REGISTRY}"
         fi
     fi
 

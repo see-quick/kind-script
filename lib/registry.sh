@@ -180,12 +180,13 @@ registry_is_healthy() {
 # =============================================================================
 
 # Configure containerd on kind nodes to use the registry
-# Args: cluster_name registry_name registry_port host_address
+# Args: cluster_name registry_name registry_port host_address insecure
 registry_configure_nodes() {
     local cluster_name="${1:-${KIND_CLUSTER_NAME}}"
     local registry_name="${2:-${REGISTRY_NAME}}"
     local registry_port="${3:-${REGISTRY_PORT}}"
     local host_address="${4:-}"
+    local insecure="${5:-false}"
 
     info "Configuring kind nodes to use registry"
 
@@ -219,9 +220,16 @@ registry_configure_nodes() {
         # Create directory and config
         ${DOCKER_CMD} exec "${node}" mkdir -p "${registry_dir}"
 
-        cat <<EOF | ${DOCKER_CMD} exec -i "${node}" cp /dev/stdin "${registry_dir}/hosts.toml"
+        if [[ "${insecure}" == "true" ]]; then
+            cat <<EOF | ${DOCKER_CMD} exec -i "${node}" cp /dev/stdin "${registry_dir}/hosts.toml"
+[host."http://${registry_name}:5000"]
+  skip_verify = true
+EOF
+        else
+            cat <<EOF | ${DOCKER_CMD} exec -i "${node}" cp /dev/stdin "${registry_dir}/hosts.toml"
 [host."http://${registry_name}:5000"]
 EOF
+        fi
     done
 
     success "Registry configured on all nodes"
@@ -363,8 +371,10 @@ EOF
     fi
 
     # Insert config after unqualified-search-registries line
-    maybe_sudo ${AWK_CMD} -v config="${podman_config}" '
-        BEGIN { inserted = 0 }
+    # Escape newlines for awk -v (which doesn't handle embedded newlines)
+    local escaped_config="${podman_config//$'\n'/\\n}"
+    maybe_sudo ${AWK_CMD} -v config="${escaped_config}" '
+        BEGIN { inserted = 0; gsub(/\\n/, "\n", config) }
         /unqualified-search-registries/ && !inserted {
             print $0
             print config
