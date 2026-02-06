@@ -205,13 +205,32 @@ EOF
 # cloud_provider_run Tests
 # =============================================================================
 
-@test "cloud_provider_run: skips when using podman" {
+@test "cloud_provider_run: succeeds with podman runtime" {
     DOCKER_CMD="podman"
-    create_mock "podman" 0 ""
+    local mock_script="${TEST_TEMP_DIR}/mocks/podman"
+    mkdir -p "${TEST_TEMP_DIR}/mocks"
+
+    cat > "${mock_script}" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "--version" ]]; then
+    echo "podman version 5.0.0"
+    exit 0
+elif [[ "$1" == "inspect" ]]; then
+    echo "false"
+    exit 1
+elif [[ "$1" == "run" ]]; then
+    echo "container-id-12345"
+    exit 0
+fi
+exit 0
+EOF
+    chmod +x "${mock_script}"
+    export PATH="${TEST_TEMP_DIR}/mocks:${PATH}"
 
     run cloud_provider_run "kind" "v0.0.6"
     assert_success
-    assert_output_contains "does not currently support Podman"
+    assert_output_contains "Detected Podman runtime"
+    assert_output_not_contains "does not currently support Podman"
 }
 
 @test "cloud_provider_run: skips when already running" {

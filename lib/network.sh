@@ -235,6 +235,40 @@ add_hosts_entry() {
 # Cloud Provider Kind
 # =============================================================================
 
+# Detect if the container runtime is actually Podman (even if aliased as docker)
+_is_runtime_podman() {
+    if [[ "${DOCKER_CMD}" == "podman" ]]; then
+        return 0
+    fi
+    if ${DOCKER_CMD} --version 2>/dev/null | grep -qi "podman"; then
+        return 0
+    fi
+    return 1
+}
+
+# Get the Podman socket path appropriate for the current OS
+_get_podman_socket_path() {
+    # macOS: podman machine socket (VM-internal path, accessible from containers)
+    if [[ "${OS}" == "macos" ]]; then
+        echo "/run/podman/podman.sock"
+        return 0
+    fi
+    # Linux: rootful socket
+    if [[ -S "/run/podman/podman.sock" ]]; then
+        echo "/run/podman/podman.sock"
+        return 0
+    fi
+    # Linux: rootless socket
+    local uid
+    uid=$(id -u)
+    if [[ -S "/run/user/${uid}/podman/podman.sock" ]]; then
+        echo "/run/user/${uid}/podman/podman.sock"
+        return 0
+    fi
+    # Fallback
+    echo "/run/podman/podman.sock"
+}
+
 # Check if cloud-provider-kind container is running
 cloud_provider_is_running() {
     local container_name="${1:-cloud-provider-kind}"
@@ -256,13 +290,6 @@ cloud_provider_run() {
     local version="${2:-${KIND_CLOUD_PROVIDER_VERSION}}"
     local container_name="cloud-provider-kind"
 
-    # Cloud provider kind only works with Docker
-    if [[ "${DOCKER_CMD}" == "podman" ]]; then
-        warn "cloud-provider-kind does not currently support Podman"
-        warn "See: https://github.com/kubernetes-sigs/cloud-provider-kind/issues/221"
-        return 0
-    fi
-
     # Check if already running
     if cloud_provider_is_running "${container_name}"; then
         info "cloud-provider-kind is already running"
@@ -280,11 +307,20 @@ cloud_provider_run() {
     info "Version: ${version}"
     info "Network: ${network}"
 
+    # Determine socket path and extra flags based on container runtime
     local socket_path="/var/run/docker.sock"
+    local extra_flags=()
+
+    if _is_runtime_podman; then
+        socket_path=$(_get_podman_socket_path)
+        extra_flags=(--privileged --user root)
+        info "Detected Podman runtime, using socket: ${socket_path}"
+    fi
 
     if ! ${DOCKER_CMD} run -d \
         --name "${container_name}" \
         --network "${network}" \
+        "${extra_flags[@]}" \
         -v "${socket_path}:/var/run/docker.sock" \
         "registry.k8s.io/cloud-provider-kind/cloud-controller-manager:${version}"; then
         err "Failed to start cloud-provider-kind"
