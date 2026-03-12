@@ -338,7 +338,9 @@ EOF
 
     echo "${daemon_config}" | maybe_sudo tee /etc/docker/daemon.json >/dev/null
     info "Restarting Docker daemon"
-    maybe_sudo systemctl restart docker
+    if ! maybe_sudo systemctl restart docker; then
+        err_and_exit "Failed to restart Docker after registry configuration"
+    fi
 
     success "Docker configured for insecure registry"
 }
@@ -375,7 +377,10 @@ EOF
     # Insert config after unqualified-search-registries line
     # Escape newlines for awk -v (which doesn't handle embedded newlines)
     local escaped_config="${podman_config//$'\n'/\\n}"
-    maybe_sudo ${AWK_CMD} -v config="${escaped_config}" '
+    local tmp_conf
+    tmp_conf=$(mktemp "${TMPDIR:-/tmp}/registries.conf.XXXXXXXXXX")
+
+    if ! maybe_sudo ${AWK_CMD} -v config="${escaped_config}" '
         BEGIN { inserted = 0; gsub(/\\n/, "\n", config) }
         /unqualified-search-registries/ && !inserted {
             print $0
@@ -384,11 +389,19 @@ EOF
             next
         }
         { print $0 }
-    ' /etc/containers/registries.conf > /tmp/registries.conf
+    ' /etc/containers/registries.conf > "${tmp_conf}"; then
+        rm -f "${tmp_conf}"
+        err_and_exit "Failed to generate Podman registry configuration"
+    fi
 
-    maybe_sudo mv /tmp/registries.conf /etc/containers/registries.conf
+    maybe_sudo mv "${tmp_conf}" /etc/containers/registries.conf || {
+        rm -f "${tmp_conf}"
+        err_and_exit "Failed to update Podman registry configuration"
+    }
     info "Restarting Podman"
-    maybe_sudo systemctl restart podman
+    if ! maybe_sudo systemctl restart podman; then
+        err_and_exit "Failed to restart Podman after registry configuration"
+    fi
 
     success "Podman configured for insecure registry"
 }
