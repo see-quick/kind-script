@@ -96,6 +96,10 @@ export ENABLE_ADMIN_BINDING="${ENABLE_ADMIN_BINDING:-true}"
 export FORCE_RECREATE="${FORCE_RECREATE:-false}"
 export CONFIGURE_INSECURE_REGISTRY="${CONFIGURE_INSECURE_REGISTRY:-false}"
 
+# Multi-Zone Configuration
+export ZONES="${ZONES:-0}"
+export NODES_PER_ZONE="${NODES_PER_ZONE:-1}"
+
 # Debug mode
 export DEBUG="${DEBUG:-false}"
 
@@ -130,6 +134,8 @@ Options:
     --no-cloud-provider         Disable cloud-provider-kind (LoadBalancer support)
     --no-node-labels            Skip node labeling
     --no-admin-binding          Skip cluster admin binding
+    --zones N                   Number of availability zones to simulate
+    --nodes-per-zone N          Worker nodes per zone (default: 1)
 
     --force                     Force recreate if cluster exists
     --configure-insecure        Configure container runtime for insecure registry
@@ -140,7 +146,8 @@ Environment Variables:
     KIND_VERSION, KIND_NODE_IMAGE, KIND_CLUSTER_NAME,
     CONTROL_NODES, WORKER_NODES, IP_FAMILY, DOCKER_CMD,
     REGISTRY_NAME, REGISTRY_PORT, REGISTRY_IMAGE,
-    ENABLE_REGISTRY, ENABLE_CLOUD_PROVIDER, DEBUG
+    ENABLE_REGISTRY, ENABLE_CLOUD_PROVIDER, DEBUG,
+    ZONES, NODES_PER_ZONE
 
 Examples:
     # Create cluster with defaults
@@ -154,6 +161,9 @@ Examples:
 
     # Create cluster using Podman
     DOCKER_CMD=podman $(basename "$0") create
+
+    # Multi-zone cluster: 3 zones, 2 workers per zone
+    $(basename "$0") create --zones 3 --nodes-per-zone 2
 
     # Delete cluster
     $(basename "$0") delete --name my-cluster
@@ -208,10 +218,12 @@ parse_args() {
                 ;;
             --control-planes)
                 CONTROL_NODES="$2"
+                _CONTROL_PLANES_EXPLICIT=true
                 shift 2
                 ;;
             --workers)
                 WORKER_NODES="$2"
+                _WORKERS_EXPLICIT=true
                 shift 2
                 ;;
             --image)
@@ -254,6 +266,14 @@ parse_args() {
             --no-admin-binding)
                 ENABLE_ADMIN_BINDING="false"
                 shift
+                ;;
+            --zones)
+                ZONES="$2"
+                shift 2
+                ;;
+            --nodes-per-zone)
+                NODES_PER_ZONE="$2"
+                shift 2
                 ;;
             --force)
                 FORCE_RECREATE="true"
@@ -336,6 +356,19 @@ validate_prerequisites() {
         fi
     fi
 
+    # Validate zone configuration
+    if [[ "${ZONES}" -lt 0 ]]; then
+        err_and_exit "Invalid zones value: ${ZONES}. Must be >= 0"
+    fi
+    if [[ "${ZONES}" -gt 0 ]] && [[ "${NODES_PER_ZONE}" -lt 1 ]]; then
+        err_and_exit "Invalid nodes-per-zone value: ${NODES_PER_ZONE}. Must be >= 1"
+    fi
+
+    # Error if --nodes-per-zone is set but --zones is not
+    if [[ "${NODES_PER_ZONE}" -ne 1 ]] && [[ "${ZONES}" -eq 0 ]]; then
+        err_and_exit "--nodes-per-zone requires --zones to be set"
+    fi
+
     success "Prerequisites validated"
 }
 
@@ -355,6 +388,19 @@ cmd_install_deps() {
 cmd_create() {
     section "Creating Kind Cluster Environment"
 
+    # Multi-zone mode: override control-plane and worker counts
+    if [[ "${ZONES}" -gt 0 ]]; then
+        # Warn if --workers or --control-planes were explicitly set on CLI
+        if [[ "${_CONTROL_PLANES_EXPLICIT:-false}" == "true" ]]; then
+            warn "--control-planes is ignored when --zones is specified (using ${ZONES} control planes)"
+        fi
+        if [[ "${_WORKERS_EXPLICIT:-false}" == "true" ]]; then
+            warn "--workers is ignored when --zones is specified (using $((ZONES * NODES_PER_ZONE)) workers)"
+        fi
+        CONTROL_NODES="${ZONES}"
+        WORKER_NODES=$(( ZONES * NODES_PER_ZONE ))
+    fi
+
     # Print configuration
     info "Configuration:"
     info "  Cluster Name:     ${KIND_CLUSTER_NAME}"
@@ -364,6 +410,12 @@ cmd_create() {
     info "  Container Runtime: ${DOCKER_CMD}"
     info "  Registry:         ${ENABLE_REGISTRY} (${REGISTRY_NAME}:${REGISTRY_PORT})"
     info "  Cloud Provider:   ${ENABLE_CLOUD_PROVIDER}"
+    if [[ "${ZONES}" -gt 0 ]]; then
+        info "  Zones:            ${ZONES}"
+        info "  Nodes/Zone:       ${NODES_PER_ZONE}"
+        info "  Total CPs:        ${CONTROL_NODES} (1 per zone)"
+        info "  Total Workers:    ${WORKER_NODES} (${NODES_PER_ZONE} per zone)"
+    fi
     echo ""
 
     # Validate prerequisites
@@ -568,6 +620,26 @@ cmd_status() {
 
         echo -e "${BOLD}Nodes:${NC}"
         kubectl get nodes --context "kind-${KIND_CLUSTER_NAME}" 2>/dev/null
+
+        # Zone topology information
+        local zone_labels
+        zone_labels=$(kubectl get nodes --context "kind-${KIND_CLUSTER_NAME}" \
+            -o custom-columns=NODE:.metadata.name,ZONE:.metadata.labels.topology\\.kubernetes\\.io/zone \
+            --no-headers 2>/dev/null || echo "")
+
+        # Check if any nodes have zone labels (filter out <none>)
+        if echo "${zone_labels}" | grep -qv '<none>$'; then
+            echo ""
+            echo -e "${BOLD}Zones:${NC}"
+            # Get unique zones and list nodes per zone
+            local zones
+            zones=$(echo "${zone_labels}" | awk '$2 != "<none>" {print $2}' | sort -u)
+            for zone in ${zones}; do
+                local zone_nodes
+                zone_nodes=$(echo "${zone_labels}" | awk -v z="${zone}" '$2 == z {print $1}' | tr '\n' ', ' | sed 's/,$//')
+                echo -e "  ${zone}: ${zone_nodes}"
+            done
+        fi
     fi
 }
 

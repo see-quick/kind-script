@@ -368,12 +368,25 @@ cluster_create_admin_binding() {
     success "Cluster admin role binding created"
 }
 
-# Label all nodes with rack-key=zone
+# Label nodes with zone topology labels (multi-zone) or flat rack-key label (standard)
+# When ZONES > 0: assigns topology.kubernetes.io/zone and rack-key labels round-robin
+# When ZONES == 0: applies flat rack-key=zone label to all nodes (original behavior)
 cluster_label_nodes() {
     local cluster_name="${1:-${KIND_CLUSTER_NAME}}"
-    local label="${2:-rack-key=zone}"
 
     kubectl config use-context "kind-${cluster_name}" >/dev/null 2>&1
+
+    if [[ "${ZONES:-0}" -gt 0 ]]; then
+        _label_nodes_multizone "${cluster_name}"
+    else
+        _label_nodes_flat "${cluster_name}"
+    fi
+}
+
+# Internal: apply flat rack-key=zone label to all nodes (original behavior)
+_label_nodes_flat() {
+    local cluster_name="$1"
+    local label="rack-key=zone"
 
     info "Labeling nodes with: ${label}"
 
@@ -381,7 +394,6 @@ cluster_label_nodes() {
     nodes=$(kubectl get nodes -o custom-columns=:.metadata.name --no-headers)
 
     for node in ${nodes}; do
-        # Check if label already exists
         local existing_label
         existing_label=$(kubectl get node "${node}" -o jsonpath="{.metadata.labels.rack-key}" 2>/dev/null || echo "")
 
@@ -394,6 +406,44 @@ cluster_label_nodes() {
     done
 
     success "All nodes labeled"
+}
+
+# Internal: apply zone-specific labels to nodes
+_label_nodes_multizone() {
+    local cluster_name="$1"
+    local zones="${ZONES}"
+
+    info "Labeling nodes for ${zones}-zone topology"
+
+    # Get control-plane nodes
+    local cp_nodes
+    cp_nodes=$(kubectl get nodes --selector=node-role.kubernetes.io/control-plane -o custom-columns=:.metadata.name --no-headers)
+
+    # Get worker nodes (nodes without control-plane role)
+    local worker_nodes
+    worker_nodes=$(kubectl get nodes --selector='!node-role.kubernetes.io/control-plane' -o custom-columns=:.metadata.name --no-headers)
+
+    # Label control-plane nodes: one per zone, in order
+    local zone_idx=0
+    for node in ${cp_nodes}; do
+        local zone_name="zone${zone_idx}"
+        kubectl label node "${node}" "topology.kubernetes.io/zone=${zone_name}" --overwrite
+        kubectl label node "${node}" "rack-key=${zone_name}" --overwrite
+        debug "Labeled CP node ${node} -> ${zone_name}"
+        zone_idx=$(( (zone_idx + 1) % zones ))
+    done
+
+    # Label worker nodes: round-robin across zones
+    zone_idx=0
+    for node in ${worker_nodes}; do
+        local zone_name="zone${zone_idx}"
+        kubectl label node "${node}" "topology.kubernetes.io/zone=${zone_name}" --overwrite
+        kubectl label node "${node}" "rack-key=${zone_name}" --overwrite
+        debug "Labeled worker node ${node} -> ${zone_name}"
+        zone_idx=$(( (zone_idx + 1) % zones ))
+    done
+
+    success "All nodes labeled with zone topology"
 }
 
 # =============================================================================

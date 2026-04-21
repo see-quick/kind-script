@@ -1,5 +1,9 @@
 .idea
+docs
 FEATURES.md
 
 # Test artifacts
 test/.bats/
+
+# Build artifacts
+dist/

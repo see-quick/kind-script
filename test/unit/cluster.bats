@@ -240,3 +240,213 @@ teardown() {
     run load_iptables_modules
     assert_success
 }
+
+# =============================================================================
+# cluster_label_nodes Multi-Zone Tests
+# =============================================================================
+
+@test "cluster_label_nodes: applies zone labels to control-plane nodes in zone mode" {
+    export ZONES=2
+    export NODES_PER_ZONE=1
+
+    # Mock kubectl to return node names based on selectors
+    local mock_path="${TEST_TEMP_DIR}/mocks"
+    mkdir -p "${mock_path}"
+
+    cat > "${mock_path}/kubectl" <<'MOCK_EOF'
+#!/usr/bin/env bash
+if [[ "$*" == *"config use-context"* ]]; then
+    exit 0
+fi
+if [[ "$*" == *"node-role.kubernetes.io/control-plane"* ]] && [[ "$*" != *"!"* ]]; then
+    echo "kind-control-plane"
+    echo "kind-control-plane2"
+    exit 0
+fi
+if [[ "$*" == *'!node-role.kubernetes.io/control-plane'* ]]; then
+    echo "kind-worker"
+    echo "kind-worker2"
+    exit 0
+fi
+if [[ "$*" == *"label node"* ]]; then
+    echo "$@" >> "${TEST_TEMP_DIR}/label-calls.log"
+    exit 0
+fi
+# fallback for other kubectl calls
+exit 0
+MOCK_EOF
+    chmod +x "${mock_path}/kubectl"
+    export PATH="${mock_path}:${PATH}"
+
+    run cluster_label_nodes "test-cluster"
+    assert_success
+
+    # Verify control-plane nodes got zone labels
+    run grep "kind-control-plane " "${TEST_TEMP_DIR}/label-calls.log"
+    assert_success
+    assert_output_contains "topology.kubernetes.io/zone=zone0"
+
+    run grep "kind-control-plane2" "${TEST_TEMP_DIR}/label-calls.log"
+    assert_success
+    assert_output_contains "topology.kubernetes.io/zone=zone1"
+}
+
+@test "cluster_label_nodes: applies zone labels to worker nodes round-robin" {
+    export ZONES=2
+    export NODES_PER_ZONE=2
+
+    local mock_path="${TEST_TEMP_DIR}/mocks"
+    mkdir -p "${mock_path}"
+
+    cat > "${mock_path}/kubectl" <<'MOCK_EOF'
+#!/usr/bin/env bash
+if [[ "$*" == *"config use-context"* ]]; then
+    exit 0
+fi
+if [[ "$*" == *"node-role.kubernetes.io/control-plane"* ]] && [[ "$*" != *"!"* ]]; then
+    echo "kind-control-plane"
+    echo "kind-control-plane2"
+    exit 0
+fi
+if [[ "$*" == *'!node-role.kubernetes.io/control-plane'* ]]; then
+    echo "kind-worker"
+    echo "kind-worker2"
+    echo "kind-worker3"
+    echo "kind-worker4"
+    exit 0
+fi
+if [[ "$*" == *"label node"* ]]; then
+    echo "$@" >> "${TEST_TEMP_DIR}/label-calls.log"
+    exit 0
+fi
+exit 0
+MOCK_EOF
+    chmod +x "${mock_path}/kubectl"
+    export PATH="${mock_path}:${PATH}"
+
+    run cluster_label_nodes "test-cluster"
+    assert_success
+
+    # Workers should be distributed round-robin: w1->zone0, w2->zone1, w3->zone0, w4->zone1
+    run grep "kind-worker " "${TEST_TEMP_DIR}/label-calls.log"
+    assert_success
+    assert_output_contains "topology.kubernetes.io/zone=zone0"
+
+    run grep "kind-worker2" "${TEST_TEMP_DIR}/label-calls.log"
+    assert_success
+    assert_output_contains "topology.kubernetes.io/zone=zone1"
+
+    run grep "kind-worker3" "${TEST_TEMP_DIR}/label-calls.log"
+    assert_success
+    assert_output_contains "topology.kubernetes.io/zone=zone0"
+
+    run grep "kind-worker4" "${TEST_TEMP_DIR}/label-calls.log"
+    assert_success
+    assert_output_contains "topology.kubernetes.io/zone=zone1"
+}
+
+@test "cluster_label_nodes: applies rack-key label alongside zone label" {
+    export ZONES=2
+    export NODES_PER_ZONE=1
+
+    local mock_path="${TEST_TEMP_DIR}/mocks"
+    mkdir -p "${mock_path}"
+
+    cat > "${mock_path}/kubectl" <<'MOCK_EOF'
+#!/usr/bin/env bash
+if [[ "$*" == *"config use-context"* ]]; then
+    exit 0
+fi
+if [[ "$*" == *"node-role.kubernetes.io/control-plane"* ]] && [[ "$*" != *"!"* ]]; then
+    echo "kind-control-plane"
+    echo "kind-control-plane2"
+    exit 0
+fi
+if [[ "$*" == *'!node-role.kubernetes.io/control-plane'* ]]; then
+    echo "kind-worker"
+    echo "kind-worker2"
+    exit 0
+fi
+if [[ "$*" == *"label node"* ]]; then
+    echo "$@" >> "${TEST_TEMP_DIR}/label-calls.log"
+    exit 0
+fi
+exit 0
+MOCK_EOF
+    chmod +x "${mock_path}/kubectl"
+    export PATH="${mock_path}:${PATH}"
+
+    run cluster_label_nodes "test-cluster"
+    assert_success
+
+    # Verify both labels are applied
+    run grep "kind-worker " "${TEST_TEMP_DIR}/label-calls.log"
+    assert_success
+    assert_output_contains "rack-key=zone0"
+
+    run grep "kind-worker2" "${TEST_TEMP_DIR}/label-calls.log"
+    assert_success
+    assert_output_contains "rack-key=zone1"
+}
+
+@test "cluster_label_nodes: falls back to original behavior when ZONES=0" {
+    export ZONES=0
+
+    # Use the simple mock - original behavior uses kubectl get nodes without selectors
+    local mock_path="${TEST_TEMP_DIR}/mocks"
+    mkdir -p "${mock_path}"
+
+    cat > "${mock_path}/kubectl" <<'MOCK_EOF'
+#!/usr/bin/env bash
+if [[ "$*" == *"config use-context"* ]]; then
+    exit 0
+fi
+if [[ "$*" == *"custom-columns"* ]]; then
+    echo "kind-control-plane"
+    echo "kind-worker"
+    exit 0
+fi
+if [[ "$*" == *"get node"* ]] && [[ "$*" == *"jsonpath"* ]]; then
+    echo ""
+    exit 0
+fi
+if [[ "$*" == *"label node"* ]]; then
+    echo "$@" >> "${TEST_TEMP_DIR}/label-calls.log"
+    exit 0
+fi
+exit 0
+MOCK_EOF
+    chmod +x "${mock_path}/kubectl"
+    export PATH="${mock_path}:${PATH}"
+
+    run cluster_label_nodes "test-cluster"
+    assert_success
+
+    # Should use the original flat label, not zone-specific
+    run cat "${TEST_TEMP_DIR}/label-calls.log"
+    assert_success
+    assert_output_contains "rack-key=zone"
+    assert_output_not_contains "topology.kubernetes.io/zone"
+}
+
+# =============================================================================
+# Multi-Zone Config Generation Tests
+# =============================================================================
+
+@test "cluster_generate_config: zone mode produces correct CP count" {
+    # When zones=3, caller sets control_planes=3
+    run cluster_generate_config 3 6 "ipv4" "" ""
+    assert_success
+    local count
+    count=$(echo "$output" | grep -c "role: control-plane" || echo "0")
+    assert [ "$count" -eq 3 ]
+}
+
+@test "cluster_generate_config: zone mode produces correct worker count" {
+    # When zones=3, nodes_per_zone=2, caller sets worker_nodes=6
+    run cluster_generate_config 3 6 "ipv4" "" ""
+    assert_success
+    local count
+    count=$(echo "$output" | grep -c "role: worker" || echo "0")
+    assert [ "$count" -eq 6 ]
+}

@@ -14,18 +14,29 @@ Inspired by [StrimKKhaos](https://github.com/see-quick/StrimKKhaos).
 
 ## Installation
 
-Download the latest version:
+Download from the latest [GitHub release](https://github.com/see-quick/kind-script/releases):
 
 ```bash
-curl -sSLO https://github.com/see-quick/kind-script/raw/main/kind-cluster.sh
+curl -sSLO https://github.com/see-quick/kind-script/releases/latest/download/kind-cluster.sh
 chmod +x kind-cluster.sh
 ```
 
 Or pin to a specific version:
 
 ```bash
-curl -sSLO https://github.com/see-quick/kind-script/raw/v1.0.0/kind-cluster.sh
+curl -sSLO https://github.com/see-quick/kind-script/releases/download/v1.0.0/kind-cluster.sh
 chmod +x kind-cluster.sh
+```
+
+### Building from source
+
+Clone the repo and run the build script to produce a single-file distribution:
+
+```bash
+git clone https://github.com/see-quick/kind-script.git
+cd kind-script
+./build.sh
+# Output: dist/kind-cluster.sh
 ```
 
 ## Quick Start
@@ -59,8 +70,40 @@ chmod +x kind-cluster.sh
 --registry-port PORT     Registry port (default: 5001)
 --no-registry            Disable local registry
 --no-cloud-provider      Disable LoadBalancer support
+--zones N                Number of zones to simulate
+--nodes-per-zone N       Worker nodes per zone (default: 1)
 --force                  Force recreate existing cluster
 --debug                  Enable debug output
+```
+
+## Multi-Zone Simulation
+
+Simulate Kubernetes availability zones by distributing nodes across zones with standard topology labels.
+
+```bash
+# 3 zones, 1 worker per zone (3 CPs + 3 workers = 6 nodes)
+./kind-cluster.sh create --zones 3
+
+# 2 zones, 3 workers per zone (2 CPs + 6 workers = 8 nodes)
+./kind-cluster.sh create --zones 2 --nodes-per-zone 3
+
+# Via environment variables
+ZONES=3 NODES_PER_ZONE=2 ./kind-cluster.sh create
+```
+
+When `--zones` is specified:
+- One control-plane node is created per zone
+- Worker nodes are distributed round-robin across zones
+- `--workers` and `--control-planes` flags are ignored with a warning
+- Each node gets labels: `topology.kubernetes.io/zone=zoneN` and `rack-key=zoneN`
+
+Check zone distribution with `status`:
+
+```bash
+./kind-cluster.sh status
+# Zones:
+#   zone0: kind-control-plane, kind-worker, kind-worker4
+#   zone1: kind-control-plane2, kind-worker2, kind-worker5
 ```
 
 ## Examples
@@ -91,6 +134,8 @@ CONTROL_NODES=3 WORKER_NODES=5 ./kind-cluster.sh create
 | `IP_FAMILY`         | ipv4         | IP family         |
 | `DOCKER_CMD`        | docker       | Container runtime |
 | `REGISTRY_PORT`     | 5001         | Registry port     |
+| `ZONES`             | 0            | Number of zones   |
+| `NODES_PER_ZONE`    | 1            | Workers per zone  |
 
 ## Using the Local Registry
 
