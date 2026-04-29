@@ -126,7 +126,7 @@ CONTROL_NODES=3 WORKER_NODES=5 ./kind-cluster.sh create
 
 | Variable            | Default      | Description       |
 |---------------------|--------------|-------------------|
-| `KIND_VERSION`      | v0.29.0      | Kind version      |
+| `KIND_VERSION`      | v0.31.0      | Kind version      |
 | `KIND_NODE_IMAGE`   | latest       | Node image        |
 | `KIND_CLUSTER_NAME` | kind-cluster | Cluster name      |
 | `CONTROL_NODES`     | 1            | Control planes    |
