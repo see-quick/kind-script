@@ -10,6 +10,7 @@ Inspired by [StrimKKhaos](https://github.com/see-quick/StrimKKhaos).
 - **Docker & Podman** support
 - **IPv4/IPv6/dual-stack** networking
 - **Local container registry** for development
+- **Multi-zone simulation** with standard topology labels
 - **Cloud-provider-kind** for LoadBalancer support
 
 ## Installation
@@ -78,7 +79,8 @@ cd kind-script
 
 ## Multi-Zone Simulation
 
-Simulate Kubernetes availability zones by distributing nodes across zones with standard topology labels.
+Simulate Kubernetes availability zones by distributing nodes across zones with standard topology labels. 
+This is useful for testing zone-aware workload placement, topology spread constraints, and rack-aware replication (e.g., Strimzi Kafka `rack.id`).
 
 ```bash
 # 3 zones, 1 worker per zone (3 CPs + 3 workers = 6 nodes)
